@@ -15,10 +15,6 @@ logger = logging.getLogger("mitm-cloud-guard")
 APP_NAME = "MITM Cloud Guard"
 CLIENT_ID = os.getenv("DEMO_CLIENT_ID", "demo-client")
 CLIENT_SECRET = os.getenv("DEMO_CLIENT_SECRET", "")
-print(
-    "SERVER SECRET FINGERPRINT:",
-    hashlib.sha256(CLIENT_SECRET.encode()).hexdigest()[:12]
-)
 MAX_CLOCK_SKEW_SECONDS = int(os.getenv("MAX_CLOCK_SKEW_SECONDS", "300"))
 USE_FIRESTORE = os.getenv("USE_FIRESTORE", "false").lower() == "true"
 
