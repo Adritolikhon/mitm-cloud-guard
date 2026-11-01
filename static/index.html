@@ -1,20 +1,368 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MITM Cloud Guard</title><style>
-:root{color-scheme:dark;font-family:system-ui,Arial}body{margin:0;background:#0b1220;color:#e8eef9}
-main{max-width:1000px;margin:40px auto;padding:0 20px}.muted{color:#9aabc5}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin:24px 0}
-.card{background:#141f33;border:1px solid #263653;border-radius:14px;padding:18px}.number{font-size:30px;font-weight:700;margin-top:8px}
-button{background:#4f8cff;color:white;border:0;border-radius:9px;padding:11px 15px;cursor:pointer;font-weight:600}
-table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}td,th{padding:12px 9px;border-bottom:1px solid #263653;text-align:left}
-.accepted{color:#65d6a3}.blocked{color:#ff8585}.error{color:#ffc66d}code{color:#b9d3ff}
-</style></head><body><main><h1>MITM Cloud Guard</h1><div class="muted">API integrity and replay-attack demonstration · Google Cloud Run</div>
-<div class="grid"><div class="card"><div class="muted">Accepted</div><div class="number accepted" id="accepted">0</div></div>
-<div class="card"><div class="muted">Blocked</div><div class="number blocked" id="blocked">0</div></div>
-<div class="card"><div class="muted">Replay store</div><div class="number" style="font-size:18px" id="store">Loading…</div></div></div>
-<div class="card"><h2>Recent security events</h2><p class="muted">Run the test scripts, then refresh.</p><button onclick="refresh()">Refresh events</button>
-<table><thead><tr><th>Time</th><th>Type</th><th>Status</th><th>Details</th></tr></thead><tbody id="events"></tbody></table></div>
-<p class="muted">Demo scope: traffic routed through this API only. Not a general-purpose network firewall or packet sniffer. In-memory replay state can reset on instance restart.</p></main>
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MITM Cloud Guard | Security Monitor</title>
+
+<style>
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #0b1220;
+  color: #e8eef9;
+}
+
+main {
+  max-width: 1150px;
+  margin: 38px auto;
+  padding: 0 22px;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+h1 { margin: 0; font-size: 30px; }
+h2 { font-size: 19px; margin-top: 0; }
+
+.muted { color: #9aabc5; }
+.subtitle { margin-top: 8px; }
+
+.status {
+  border: 1px solid #285d4c;
+  background: #123629;
+  color: #65d6a3;
+  padding: 8px 13px;
+  border-radius: 20px;
+  font-size: 13px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(205px,1fr));
+  gap: 15px;
+  margin: 28px 0;
+}
+
+.card {
+  background: #141f33;
+  border: 1px solid #263653;
+  border-radius: 14px;
+  padding: 20px;
+}
+
+.number {
+  font-size: 34px;
+  font-weight: 750;
+  margin-top: 10px;
+}
+
+.accepted { color: #65d6a3; }
+.blocked { color: #ff8585; }
+.integrity { color: #ffb86b; }
+.replay { color: #bd9aff; }
+
+.panel { margin-top: 20px; }
+
+button {
+  background: #4f8cff;
+  color: white;
+  border: 0;
+  border-radius: 9px;
+  padding: 10px 15px;
+  cursor: pointer;
+  font-weight: 650;
+}
+button:disabled { opacity: .6; cursor: wait; }
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bar {
+  display: flex;
+  width: 100%;
+  height: 13px;
+  background: #27344b;
+  overflow: hidden;
+  border-radius: 20px;
+  margin-top: 15px;
+}
+
+.bar-accepted { background: #43c995; }
+.bar-blocked { background: #ff7777; }
+
+.legend {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+  font-size: 13px;
+}
+
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 17px;
+  font-size: 14px;
+}
+
+th, td {
+  padding: 13px 10px;
+  border-bottom: 1px solid #263653;
+  text-align: left;
+}
+
+th { color: #9aabc5; }
+
+.scroll { overflow-x: auto; }
+
+.footer {
+  margin: 25px 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+@media(max-width:600px) {
+  main { margin: 22px auto; padding: 0 14px; }
+  h1 { font-size: 25px; }
+  th,td { padding: 10px 7px; }
+}
+</style>
+</head>
+
+<body>
+<main>
+
+<header>
+  <div>
+    <h1>MITM Cloud Guard</h1>
+    <div class="muted subtitle">
+      Cloud API Integrity & Replay Attack Monitor · Render
+    </div>
+  </div>
+  <div class="status" id="connection">● Connecting...</div>
+</header>
+
+<section class="grid">
+  <div class="card">
+    <div class="muted">Accepted Requests</div>
+    <div class="number accepted" id="accepted">0</div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Total Blocked</div>
+    <div class="number blocked" id="blocked">0</div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Tampering Attempts</div>
+    <div class="number integrity" id="integrity">0</div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Replay Attacks</div>
+    <div class="number replay" id="replay">0</div>
+  </div>
+</section>
+
+<section class="card panel">
+  <h2>Traffic Overview</h2>
+  <div class="muted">Accepted versus blocked requests</div>
+
+  <div class="bar">
+    <div class="bar-accepted" id="acceptedBar"></div>
+    <div class="bar-blocked" id="blockedBar"></div>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:#43c995"></i>Accepted</span>
+    <span><i class="dot" style="background:#ff7777"></i>Blocked</span>
+  </div>
+</section>
+
+<section class="grid">
+  <div class="card">
+    <div class="muted">Replay Protection</div>
+    <div id="store" style="font-weight:700;margin-top:12px">
+      Loading...
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Last Updated</div>
+    <div id="updated" style="font-weight:700;margin-top:12px">
+      Waiting...
+    </div>
+  </div>
+</section>
+
+<section class="card panel">
+  <div class="toolbar">
+    <div>
+      <h2 style="margin-bottom:5px">Security Event Monitor</h2>
+      <div class="muted" style="font-size:13px">
+        Recent accepted and blocked requests
+      </div>
+    </div>
+    <button id="refreshButton" onclick="refresh()">Refresh Now</button>
+  </div>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Result</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody id="events">
+        <tr><td colspan="4">Loading events...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="muted footer">
+  MITM Cloud Guard is an application-layer security demonstration.
+  It detects request-signature mismatches and repeated nonces for
+  traffic routed through this API. It is not a general-purpose
+  network firewall or packet sniffer.
+
+  <br><br>
+  Demo deployment: Render · Replay state is stored in memory and
+  can reset when the service restarts.
+</div>
+
+</main>
+
 <script>
-async function refresh(){try{const r=await fetch('/api/status'),d=await r.json();document.getElementById('accepted').textContent=d.counts.accepted||0;document.getElementById('blocked').textContent=d.counts.blocked||0;document.getElementById('store').textContent=d.replay_store;const b=document.getElementById('events');b.innerHTML='';if(!d.recent_events.length){b.innerHTML='<tr><td colspan="4">No events yet</td></tr>';return;}for(const e of d.recent_events){const tr=document.createElement('tr');[new Date(e.time*1000).toLocaleTimeString(),e.type,e.status,e.detail].forEach((v,i)=>{const td=document.createElement('td');td.textContent=v;if(i===2)td.className=e.status;tr.appendChild(td)});b.appendChild(tr)}}catch(e){document.getElementById('events').textContent='Unable to load events'}}
-refresh();setInterval(refresh,5000);
-</script></body></html>
+async function refresh() {
+  const button = document.getElementById("refreshButton");
+  const connection = document.getElementById("connection");
+
+  button.disabled = true;
+
+  try {
+    const response = await fetch("/api/status", {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error("API returned " + response.status);
+    }
+
+    const data = await response.json();
+    const counts = data.counts || {};
+    const events = data.recent_events || [];
+
+    const accepted = Number(counts.accepted || 0);
+    const blocked = Number(counts.blocked || 0);
+
+    const integrity = events.filter(
+      e => e.type === "integrity" && e.status === "blocked"
+    ).length;
+
+    const replay = events.filter(
+      e => e.type === "replay" && e.status === "blocked"
+    ).length;
+
+    document.getElementById("accepted").textContent = accepted;
+    document.getElementById("blocked").textContent = blocked;
+    document.getElementById("integrity").textContent = integrity;
+    document.getElementById("replay").textContent = replay;
+
+    const total = accepted + blocked;
+    const acceptedPercent = total ? accepted / total * 100 : 0;
+    const blockedPercent = total ? blocked / total * 100 : 0;
+
+    document.getElementById("acceptedBar").style.width =
+      acceptedPercent + "%";
+
+    document.getElementById("blockedBar").style.width =
+      blockedPercent + "%";
+
+    document.getElementById("store").textContent =
+      data.replay_store || "Unknown";
+
+    document.getElementById("updated").textContent =
+      new Date().toLocaleTimeString();
+
+    connection.textContent = "● Cloud API Connected";
+
+    const tbody = document.getElementById("events");
+    tbody.replaceChildren();
+
+    if (!events.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 4;
+      cell.textContent = "No security events recorded yet.";
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    }
+
+    events.forEach(event => {
+      const row = document.createElement("tr");
+
+      const values = [
+        new Date(event.time * 1000).toLocaleTimeString(),
+        event.type,
+        event.status,
+        event.detail
+      ];
+
+      values.forEach((value, index) => {
+        const cell = document.createElement("td");
+        cell.textContent = value ?? "-";
+
+        if (index === 2) {
+          cell.className = event.status;
+        }
+
+        row.appendChild(cell);
+      });
+
+      tbody.appendChild(row);
+    });
+
+  } catch (error) {
+    connection.textContent = "● Connection Error";
+    connection.style.color = "#ff8585";
+    connection.style.borderColor = "#773e45";
+  } finally {
+    button.disabled = false;
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+
+</body>
+</html>
