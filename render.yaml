@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: mitm-cloud-guard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: DEMO_CLIENT_ID
+        value: demo-client
+      - key: DEMO_CLIENT_SECRET
+        generateValue: true
+      - key: MAX_CLOCK_SKEW_SECONDS
+        value: "300"
